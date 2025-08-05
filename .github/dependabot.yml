@@ -9,6 +9,15 @@ updates:
     open-pull-requests-limit: 5 # default value; check https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference#open-pull-requests-limit-
     commit-message:
       prefix: "Update"
+    ignore:
+      - dependency-name: "*"
+        versions: ["*"]
+        update-types: ["version-update:semver-major"]
+        # Ignore version updates in specific workflow files:
+        # Dependabot will ignore dependencies declared ONLY in these files.
+        files:
+          - .github/workflows/forward-dependabot-updates.yml
+          - .github/workflows/sync-from-template.yml
     allow:
       - dependency-name: "suisei-cn/actions-download-file"
       - dependency-name: "thedoctor0/zip-release"
