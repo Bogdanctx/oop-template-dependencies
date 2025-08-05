@@ -5,7 +5,7 @@ runs:
   using: "composite"
   steps:
     - name: Cache restore tools
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v3
       if: runner.os == 'Linux' && matrix.runs_msan == true
       id: cache-tools
       with:
