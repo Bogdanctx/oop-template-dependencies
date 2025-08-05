@@ -5,7 +5,7 @@ runs:
   using: "composite"
   steps:
     - name: Cache cppcheck
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v3
       id: cache-cppcheck
       with:
         path: cppcheck
