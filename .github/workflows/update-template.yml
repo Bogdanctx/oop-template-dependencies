@@ -94,7 +94,7 @@ jobs:
           base: ${{ env.DEFAULT_BRANCH }}
           commit-message: |
             chore: sync workflows from ${{ env.SOURCE_REPO }} @ ${{ github.sha }}
-          titles: |
+          title: |
             Sync GitHub Actions from ${{ env.SOURCE_REPO }}
           body: |
             PR auto-generated in **${{ env.SOURCE_REPO }}** to sync:
