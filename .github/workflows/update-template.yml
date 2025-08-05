@@ -74,7 +74,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
 
             {
-              echo "changed_files << EOF"
+              echo "changed_files<<EOF"
               git -C template --no-pager diff --name-status -- .github/actions .github/workflows .github/workflow
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
