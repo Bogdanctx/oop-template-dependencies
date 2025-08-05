@@ -1,23 +1,7 @@
-name: Sync workflows back to template
+name: Send updates to oop-template
 
 on:
-  workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Only report differences (no PR)"
-        required: false
-        default: "false"
-        type: choice
-        options: ["false", "true"]
-  schedule:
-    # Every Monday at 04:17 UTC
-    - cron: "17 4 * * 1"
-  push:
-    branches: [ main, master ]
-    paths:
-      - ".github/actions/**"
-      - ".github/workflows/**"
-      - ".github/workflow/**"
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -27,6 +11,7 @@ env:
   TEMPLATE_OWNER: bogdanctx
   TEMPLATE_REPO: oop-template
   SOURCE_REPO: bogdanctx/oop-template-dependencies
+  DEFAULT_BRANCH: main
 
 jobs:
   sync:
@@ -34,21 +19,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check required secret
-        shell: bash
+      - name: Check required  secret
+        env:
+          HAS_TOKEN: ${{ secrets.TEMPLATE_REPO_TOKEN != '' }}
         run: |
-          if [[ -z "${{ secrets.TEMPLATE_REPO_TOKEN || '' }}" ]]; then
-            echo "::error::Secret TEMPLATE_REPO_TOKEN is not set in this repository."
-            echo "Add a fine-grained PAT with access to ${TEMPLATE_OWNER}/${TEMPLATE_REPO}."
+          if [[ "${HAS_TOKEN}" != "true" ]]; then
+            echo "::error::Secret TEMPLATE_REPO_TOKEN missing"
             exit 1
           fi
-
+      
       - name: Checkout source (this repo)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Checkout template repo
+        
+      - name: Checkout template repository
         uses: actions/checkout@v4
         with:
           repository: ${{ env.TEMPLATE_OWNER }}/${{ env.TEMPLATE_REPO }}
@@ -56,113 +41,74 @@ jobs:
           path: template
           fetch-depth: 0
 
-      - name: Detect template default branch (robust)
-        id: detect_base
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Try to read the remote's HEAD branch (doesn't rely on refs/remotes/origin/HEAD)
-          base="$(git -C template remote show origin | awk -F': ' '/HEAD branch/ {print $2}')"
-
-          # Fallback if HEAD branch is unknown (some remotes omit it)
-          if [[ -z "${base:-}" || "${base}" == "(unknown)" ]]; then
-            for cand in main master; do
-              if git -C template show-ref --verify --quiet "refs/remotes/origin/${cand}"; then
-                base="$cand"
-                break
-              fi
-            done
-          fi
-
-          # Final fallback
-          : "${base:=main}"
-
-          echo "base=$base" >> "$GITHUB_OUTPUT"
-          echo "Template default branch: $base" >> "$GITHUB_STEP_SUMMARY"
-
-
-      - name: Sync only .github/actions and workflows into template working tree
+      - name: Sync .github/actions & .github/workflows
         id: sync_dirs
         shell: bash
         run: |
           set -euo pipefail
+          
+          echo "Using template base branch: ${DEFAULT_BRANCH}" >> "$GITHUB_STEP_SUMMARY"
+          git -C template checkout main
 
-          # Make sure we're on the template default branch
-          git -C template checkout "${{ steps.detect_base.outputs.base }}"
-
-          # Prepare destination directories in template
           mkdir -p template/.github/actions
           mkdir -p template/.github/workflows
 
-          # rsync just the desired paths (and delete removed files to keep them in sync)
           rsync -a --delete \
             --include='.github/' \
+            --exclude='.github/workflows/update-template.yml' \
+            --exclude='.github/dependabot.yml' \
             --include='.github/actions/***' \
             --include='.github/workflows/***' \
-            --include='.github/workflow/***' \
             --exclude='*' \
             ./ template/
 
-          # Detect changes limited to these dirs
-          if git -C template status --porcelain -- .github/actions .github/workflows .github/workflow | grep -q .; then
+          if git -C template status --porcelain -- .github/actions .github/workflows | grep -q .; then
             echo "has_changes=true" >> "$GITHUB_OUTPUT"
+
             {
               echo "### Changes detected"
               echo
-              echo '```diff'
-              git -C template --no-pager diff -- .github/actions .github/workflows .github/workflow | sed -e 's/^/ /'
+              echo '```dif'
+              git -C template --no-pager diff -- .github/actions .github/workflows | sed -e 's/^/ /'
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
 
-            # Also expose a compact file list for use in the PR body if desired
             {
-              echo "changed_files<<EOF"
+              echo "changed_files << EOF"
               git -C template --no-pager diff --name-status -- .github/actions .github/workflows .github/workflow
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
-
+          
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "No changes detected in .github/actions or .github/workflows." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Stop if dry-run requested
-        if: ${{ inputs.dry_run == 'true' }}
-        shell: bash
-        run: |
-          echo "Dry run requested. Exiting before creating a PR."
-          exit 0
-
-      - name: Create PR on template (if changes)
+      - name: Create PR on template
         if: ${{ steps.sync_dirs.outputs.has_changes == 'true' }}
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.TEMPLATE_REPO_TOKEN }}
           path: template
-          # Branch name in the template repo where changes will be pushed
-          branch: sync/gha-from-dependencies-${{ github.run_id }}
-          base: ${{ steps.detect_base.outputs.base }}
+          branch: sync/gha-from-dependencies
+          base: ${{ env.DEFAULT_BRANCH }}
           commit-message: |
             chore: sync workflows from ${{ env.SOURCE_REPO }} @ ${{ github.sha }}
-          title: |
+          titles: |
             Sync GitHub Actions from ${{ env.SOURCE_REPO }}
           body: |
-            This PR was auto-generated by a workflow in **${{ env.SOURCE_REPO }}** to sync:
+            PR auto-generated in **${{ env.SOURCE_REPO }}** to sync:
             - `.github/actions`
-            - `.github/workflows` (and `.github/workflow` if present)
-
-            **Source commit:** `${{ github.sha }}`
-
+            - `.github/workflows`
+          
+            ** Source commit:** `${{ github.sha }}`
+            
             **Changed files:**
             ```
             ${{ steps.sync_dirs.outputs.changed_files }}
             ```
 
-          labels: |
-            automation
-            ci
-
       - name: No-op when nothing changed
-        if: ${{ steps.sync_dirs.outputs.has_changes != 'true' && inputs.dry_run != 'true' }}
+        if: ${{ steps.sync_dirs.outputs.has_changes == 'false' }}
         shell: bash
-        run: echo "Nothing to PR. All in sync."
+        run: echo "Nothing to PR."
