@@ -1,0 +1,62 @@
+name: Sync from template
+
+on:
+  schedule:
+    - cron: "0 6 * * *"     # daily at 06:00 UTC; adjust as you like
+  workflow_dispatch: {}      # allow manual run
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    env:
+      TEMPLATE_REPO: bogdanctx/oop-template
+      TEMPLATE_REF: main
+      BASE_BRANCH: ${{ github.event.repository.default_branch }}
+      PR_BRANCH: chore/sync-template
+    steps:
+      - name: Checkout base
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ env.BASE_BRANCH }}
+
+      - name: Checkout template into subfolder
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TEMPLATE_REPO }}
+          ref: ${{ env.TEMPLATE_REF }}
+          path: template
+
+      - name: Overlay template onto repo (rsync)
+        run: |
+          set -e
+          shopt -s dotglob
+          EXCLUDES=(
+            ".git"
+            ".github/dependabot.yml"
+            ".github/workflows/sync-from-template.yml"
+            ".github/workflows/forward-dependabot-updates.yml"
+          )
+          RSYNC_EXCLUDES=()
+          for e in "${EXCLUDES[@]}"; do RSYNC_EXCLUDES+=(--exclude "$e"); done
+
+          rsync -a --delete "${RSYNC_EXCLUDES[@]}" template/ ./
+
+          if git diff --quiet; then
+            echo "No changes from template."
+            exit 0
+          fi
+
+      - name: Open PR with changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: ${{ env.PR_BRANCH }}
+          base: ${{ env.BASE_BRANCH }}
+          commit-message: "chore: sync from ${TEMPLATE_REPO}@${TEMPLATE_REF}"
+          title: "chore: sync from template"
+          body: "Automated PR to sync from `${{ env.TEMPLATE_REPO }}` (`${{ env.TEMPLATE_REF }}`)."
+          delete-branch: true
