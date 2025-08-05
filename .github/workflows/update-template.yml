@@ -116,10 +116,11 @@ jobs:
 
             # Also expose a compact file list for use in the PR body if desired
             {
-              echo "changed_files<<'EOF'"
+              echo "changed_files<<EOF"
               git -C template --no-pager diff --name-status -- .github/actions .github/workflows .github/workflow
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
+
           else
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
             echo "No changes detected in .github/actions or .github/workflows." >> "$GITHUB_STEP_SUMMARY"
