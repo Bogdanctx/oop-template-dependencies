@@ -56,15 +56,30 @@ jobs:
           path: template
           fetch-depth: 0
 
-      - name: Detect template default branch
+      - name: Detect template default branch (robust)
         id: detect_base
         shell: bash
         run: |
           set -euo pipefail
-          base="$(git -C template symbolic-ref --short refs/remotes/origin/HEAD | sed 's@^origin/@@')"
-          if [[ -z "$base" ]]; then base="main"; fi
+          # Try to read the remote's HEAD branch (doesn't rely on refs/remotes/origin/HEAD)
+          base="$(git -C template remote show origin | awk -F': ' '/HEAD branch/ {print $2}')"
+
+          # Fallback if HEAD branch is unknown (some remotes omit it)
+          if [[ -z "${base:-}" || "${base}" == "(unknown)" ]]; then
+            for cand in main master; do
+              if git -C template show-ref --verify --quiet "refs/remotes/origin/${cand}"; then
+                base="$cand"
+                break
+              fi
+            done
+          fi
+
+          # Final fallback
+          : "${base:=main}"
+
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "Template default branch: $base" >> "$GITHUB_STEP_SUMMARY"
+
 
       - name: Sync only .github/actions and workflows into template working tree
         id: sync_dirs
